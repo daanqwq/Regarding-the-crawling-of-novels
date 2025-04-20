@@ -2,7 +2,9 @@ import requests
 import re
 import time
 import sys
+import os
 from tqdm import tqdm
+from pathlib import Path
 
 def JingDuTiao(finish_tasks_number, tasks_number, EE=''):
     pbar = tqdm(
@@ -28,7 +30,38 @@ def get_chapter_content(url, max_retries=3):
                 last_line = re.search('&nbsp;&nbsp;&nbsp;&nbsp;(.*)</div>', html.text)
                 if last_line:
                     contents.append(last_line.group(1))
-                return BiaoTi, contents
+                
+                # 检测章节是否完整
+                incomplete_markers = [
+                    '正在手打中',
+                    '请稍等片刻',
+                    '内容更新后',
+                    '请重新刷新页面',
+                    '即可获取最新更新',
+                    '全文字更新,牢记网址'
+                ]
+                
+                is_incomplete = any(marker in line for line in contents for marker in incomplete_markers)
+                
+                # 清理内容
+                cleaned_contents = []
+                for line in contents:
+                    # 移除网站广告和提示信息
+                    if not any(marker in line for marker in incomplete_markers):
+                        cleaned_line = re.sub(r'《.*?》', '', line)  # 移除书名标记
+                        cleaned_line = re.sub(r'<.*?>', '', cleaned_line)  # 移除HTML标签
+                        cleaned_line = cleaned_line.strip()
+                        if cleaned_line:
+                            cleaned_contents.append(cleaned_line)
+                
+                # 如果检测到不完整章节，添加提示
+                if is_incomplete and cleaned_contents:
+                    cleaned_contents.append("\n!!!此章内容不全，因为下载网站（www.shukuge.com）没有完整的小说内容!!!")
+                elif is_incomplete and not cleaned_contents:
+                    cleaned_contents.append("!!!本章内容尚未更新，请稍后再试或访问原网站查看!!!")
+                
+                return BiaoTi, cleaned_contents
+                
         except KeyboardInterrupt:
             raise  # 直接抛出不重试
         except Exception as e:
@@ -38,6 +71,9 @@ def get_chapter_content(url, max_retries=3):
 
 def main():
     try:
+        # 获取脚本所在目录的绝对路径
+        script_dir = Path(__file__).parent.absolute()
+        
         # 用户输入处理
         while True:
             try:
@@ -49,7 +85,8 @@ def main():
                 
                 ZhangJie = int(input('从哪章开始？(默认1)\n') or 1) - 1
                 if ZhangJie == 0:
-                    with open(Da_BiaoTi + '.txt', 'w'):
+                    # 使用脚本所在目录的路径创建文件
+                    with open(script_dir / f'{Da_BiaoTi}.txt', 'w'):
                         pass
                 break
             except KeyboardInterrupt:
@@ -62,7 +99,8 @@ def main():
         pbar = None
         try:
             pbar = JingDuTiao(ZhangJie, len(X_html))
-            with open(Da_BiaoTi + '.txt', 'a', encoding='utf-8') as f:
+            # 使用脚本所在目录的路径打开文件
+            with open(script_dir / f'{Da_BiaoTi}.txt', 'a', encoding='utf-8') as f:
                 while ZhangJie < len(X_html):
                     try:
                         BiaoTi, NeiRon = get_chapter_content(X_html[ZhangJie][1:-1])
@@ -79,6 +117,8 @@ def main():
                         if confirm == 'y' or confirm == '':
                             print('\n已退出')
                             return
+                        else:
+                            os.system('cls')
                         continue
                     except Exception as e:
                         print(f'\n章节{X_html[ZhangJie]}下载失败: {e}')
